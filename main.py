@@ -4,8 +4,9 @@ from pathlib import Path
 import rss
 import state
 import transmission
+import argparse
 
-def load_config(path="config.yaml"):
+def load_config(path=Path(__file__).parent / "config.yaml"):
     with open(path, "r") as f:
         raw = yaml.safe_load(f)
     
@@ -25,10 +26,15 @@ def load_config(path="config.yaml"):
 
     return config
 
-def setup_logging(log_level, log_file):
+def parse_args():
+    parser = argparse.ArgumentParser(description="Add ShowRSS items to Transmission")
+    parser.add_argument("--feed", help="Process a complete feed URL, without using or updating state")
+    return parser.parse_args()
+
+def setup_logging(log_level, log_file, mode):
     logging.basicConfig(
         level=getattr(logging, log_level, logging.INFO),
-        format="%(asctime)s [%(levelname)s] %(message)s",
+        format=f"%(asctime)s [{mode}] [%(levelname)s] %(message)s",
         handlers=[
             logging.FileHandler(log_file),
             logging.StreamHandler()
@@ -75,16 +81,19 @@ def process_feed(config, url, since=None):
 
 config = load_config()
 
-setup_logging(config["log_level"], config["log_file"])
-log = logging.getLogger(__name__)
+args = parse_args()
+mode = "feed" if args.feed else "cron"
 
+config = load_config()
+
+setup_logging(config["log_level"], config["log_file"], mode)
+log = logging.getLogger(__name__)
 log.info("Config loaded successfully")
 
-items = rss.get_items(config["rss_url"])
-log.info(f"Found {len(items)} items in feed")
-
-last_date = state.load_last_date(config["state_file"])
-newest_date = process_feed(config, config["rss_url"], since=last_date)
-
-if newest_date:
-    state.save_last_date(config["state_file"], newest_date)
+if args.feed:
+    process_feed(config, args.feed)
+else:
+    last_date = state.load_last_date(config["state_file"])
+    newest_date = process_feed(config, config["rss_url"], since=last_date)
+    if newest_date:
+        state.save_last_date(config["state_file"], newest_date)
