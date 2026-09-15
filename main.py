@@ -79,7 +79,7 @@ def process_feed(config, url, since=None):
 
     return newest_date
 
-config = load_config()
+
 
 args = parse_args()
 mode = "feed" if args.feed else "cron"
