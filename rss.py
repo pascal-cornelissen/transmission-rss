@@ -69,6 +69,7 @@ def parse_items(xml_text):
 
         items.append({
             "title":     title,
+            "raw_title": raw_title,
             "pub_date":  pub_date,
             "show_name": show_name,
             "season":    season,

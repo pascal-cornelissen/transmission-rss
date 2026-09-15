@@ -11,6 +11,7 @@ def load_config(path="config.yaml"):
     
     config = {
         "rss_url":          raw["rss_url"],
+        "quality":          (raw.get("quality") or "").strip(),
         "state_file":       Path(raw["state_file"]).expanduser(),
         "log_file":         Path(raw["log"]["file"]).expanduser(),
         "log_level":        raw["log"]["level"].upper(),
@@ -34,32 +35,41 @@ def setup_logging(log_level, log_file):
         ]
     )
  
-def process_items(items, last_date):
-    newest_date = last_date
+def process_feed(config, url, since=None):
+    items = rss.get_items(url)
+    log.info(f"Found {len(items)} items in feed")
 
+    if config["quality"]:
+        quality = config["quality"].lower()
+        items = [i for i in items if quality in i["raw_title"].lower()]
+        log.info(f"{len(items)} items left after quality filter '{config['quality']}'")
+
+    if since:
+        items = [i for i in items if i["pub_date"] > since]
+        log.info(f"{len(items)} new items since {since}")
+
+    newest_date = None
     for item in items:
-        if last_date is None or item["pub_date"] > last_date:
-            log.info(f"  {item['show_name']} | {item['season']} | {item['pub_date']}")
-            
-            # send to transmission
-            destination_path = transmission.build_destination_path(
-                config["tr_destination"],
-                item["show_name"],
-                item["season"]
-            )
+        log.info(f"  {item['show_name']} | {item['season']} | {item['pub_date']}")
 
-            success = transmission.add_torrent(
-                host=config["tr_host"], 
-                port=config["tr_port"], 
-                username=config["tr_username"], 
-                password=config["tr_password"],
-                magnet=item["magnet"], 
-                destination_path=destination_path,
-                dry_run=config["dry_run"]
-                )
+        destination_path = transmission.build_destination_path(
+            config["tr_destination"],
+            item["show_name"],
+            item["season"]
+        )
 
-            if success and (newest_date is None or item["pub_date"] > newest_date):
-                newest_date = item["pub_date"]
+        success = transmission.add_torrent(
+            host=config["tr_host"],
+            port=config["tr_port"],
+            username=config["tr_username"],
+            password=config["tr_password"],
+            magnet=item["magnet"],
+            destination_path=destination_path,
+            dry_run=config["dry_run"]
+        )
+
+        if success and (newest_date is None or item["pub_date"] > newest_date):
+            newest_date = item["pub_date"]
 
     return newest_date
 
@@ -73,7 +83,8 @@ log.info("Config loaded successfully")
 items = rss.get_items(config["rss_url"])
 log.info(f"Found {len(items)} items in feed")
 
-# process items
 last_date = state.load_last_date(config["state_file"])
-newest_date = process_items(items, last_date)
-state.save_last_date(config["state_file"],newest_date)
+newest_date = process_feed(config, config["rss_url"], since=last_date)
+
+if newest_date:
+    state.save_last_date(config["state_file"], newest_date)
